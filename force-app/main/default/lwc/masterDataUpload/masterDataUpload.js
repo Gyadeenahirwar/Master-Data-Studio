@@ -111,27 +111,31 @@ export default class MasterDataUpload extends LightningElement {
         this.wiredConfigsResult = result;
         const { data, error } = result;
         if (data) {
-            this.uploadConfigs = data;
-            this.objectOptions = data.map(cfg => ({
-                label: `${cfg.stepBadge} - ${cfg.objectLabel} (${cfg.objectApiName})`,
-                value: cfg.objectApiName
-            }));
-
-            if (this.objectOptions.length > 0) {
-                // If currently selected object still exists, keep it, else pick the first
-                const exists = this.objectOptions.some(o => o.value === this.selectedObjectApi);
-                if (!exists) {
-                    this.selectedObjectApi = this.objectOptions[0].value;
-                }
-                this.syncSelectedConfig();
-                this.loadTemplateDetails();
-            } else {
-                this.selectedConfig = null;
-                this.templateDetails = null;
-                this.fieldMappings = [];
-            }
+            this.applyUploadConfigs(data);
         } else if (error) {
             this.showToast('Error', 'Failed to load upload configurations: ' + (error.body ? error.body.message : error.message), 'error');
+        }
+    }
+
+    applyUploadConfigs(data) {
+        this.uploadConfigs = data || [];
+        this.objectOptions = this.uploadConfigs.map(cfg => ({
+            label: `${cfg.stepBadge} - ${cfg.objectLabel} (${cfg.objectApiName})`,
+            value: cfg.objectApiName
+        }));
+
+        if (this.objectOptions.length > 0) {
+            const exists = this.objectOptions.some(o => o.value === this.selectedObjectApi);
+            if (!exists) {
+                this.selectedObjectApi = this.objectOptions[0].value;
+            }
+            this.syncSelectedConfig();
+            this.loadTemplateDetails();
+        } else {
+            this.selectedObjectApi = '';
+            this.selectedConfig = null;
+            this.templateDetails = null;
+            this.fieldMappings = [];
         }
     }
 
@@ -229,18 +233,31 @@ export default class MasterDataUpload extends LightningElement {
         if (!confirmed) return;
 
         this.isLoading = true;
+        const objectToDelete = this.selectedObjectApi;
         try {
-            const deleted = await deleteObjectUploadConfig({ objectApiName: this.selectedObjectApi });
+            const deleted = await deleteObjectUploadConfig({ objectApiName: objectToDelete });
             if (deleted) {
                 this.showToast('Deleted', `Uploader for "${objectLabel}" was removed successfully.`, 'success');
-                this.selectedObjectApi = '';
-                this.selectedConfig = null;
-                this.templateDetails = null;
-                this.fieldMappings = [];
+
+                // 1. Immediate local state cleanup
+                const updatedConfigs = (this.uploadConfigs || []).filter(c => c.objectApiName !== objectToDelete);
+                if (this.allEligibleObjects) {
+                    this.allEligibleObjects = this.allEligibleObjects.map(o => {
+                        if (o.value === objectToDelete) {
+                            return { ...o, isConfigured: false, currentSequence: null };
+                        }
+                        return o;
+                    });
+                }
                 this.handleClearFile();
+                this.applyUploadConfigs(updatedConfigs);
+
+                // 2. Invalidate LDS cache and sync with server
                 if (this.wiredConfigsResult) {
                     await refreshApex(this.wiredConfigsResult);
                 }
+                const fresh = await getUploadConfigs();
+                this.applyUploadConfigs(fresh);
             } else {
                 this.showToast('Warning', 'No configuration found to delete.', 'warning');
             }
@@ -417,12 +434,13 @@ export default class MasterDataUpload extends LightningElement {
             this.showToast('Success', `Uploader configured successfully for ${savedConfig.objectLabel}!`, 'success');
             this.isSetupModalOpen = false;
 
-            // Refresh configurations and auto-select newly saved object
+            // Invalidate cache and fetch fresh configurations immediately
             this.selectedObjectApi = savedConfig.objectApiName;
             if (this.wiredConfigsResult) {
                 await refreshApex(this.wiredConfigsResult);
             }
-            await this.loadTemplateDetails();
+            const freshConfigs = await getUploadConfigs();
+            this.applyUploadConfigs(freshConfigs);
         } catch (ex) {
             this.showToast('Error', 'Failed to save configuration: ' + (ex.body ? ex.body.message : ex.message), 'error');
         } finally {
@@ -431,18 +449,36 @@ export default class MasterDataUpload extends LightningElement {
     }
 
     async handleDeleteConfig() {
-        if (!confirm(`Are you sure you want to delete the uploader configuration for ${this.setupForm.objectLabel}?`)) {
+        const objectToDelete = this.setupForm.objectApiName;
+        const objectLabel = this.setupForm.objectLabel;
+        if (!confirm(`Are you sure you want to delete the uploader configuration for ${objectLabel}?`)) {
             return;
         }
         this.isSetupLoading = true;
         try {
-            await deleteObjectUploadConfig({ objectApiName: this.setupForm.objectApiName });
-            this.showToast('Deleted', `Uploader for ${this.setupForm.objectLabel} was removed.`, 'info');
+            await deleteObjectUploadConfig({ objectApiName: objectToDelete });
+            this.showToast('Deleted', `Uploader for ${objectLabel} was removed.`, 'info');
             this.isSetupModalOpen = false;
-            this.selectedObjectApi = '';
+
+            // 1. Immediately update local state without waiting for network/cache
+            const updatedConfigs = (this.uploadConfigs || []).filter(c => c.objectApiName !== objectToDelete);
+            if (this.allEligibleObjects) {
+                this.allEligibleObjects = this.allEligibleObjects.map(o => {
+                    if (o.value === objectToDelete) {
+                        return { ...o, isConfigured: false, currentSequence: null };
+                    }
+                    return o;
+                });
+            }
+            this.handleClearFile();
+            this.applyUploadConfigs(updatedConfigs);
+
+            // 2. Invalidate LDS cache and sync with server
             if (this.wiredConfigsResult) {
                 await refreshApex(this.wiredConfigsResult);
             }
+            const fresh = await getUploadConfigs();
+            this.applyUploadConfigs(fresh);
         } catch (ex) {
             this.showToast('Error', 'Failed to delete configuration: ' + (ex.body ? ex.body.message : ex.message), 'error');
         } finally {

@@ -350,8 +350,12 @@ public without sharing class MasterUploadController {
     public static Boolean deleteObjectUploadConfig(String objectApiName) {
         if (String.isBlank(objectApiName)) return false;
         try {
+            String stripped = (objectApiName.contains('__') && objectApiName.indexOf('__') != objectApiName.lastIndexOf('__'))
+                ? objectApiName.substringAfter('__')
+                : objectApiName;
             List<Master_Data_Studio_Config__c> records = [
-                SELECT Id FROM Master_Data_Studio_Config__c WHERE Object_API_Name__c = :objectApiName
+                SELECT Id FROM Master_Data_Studio_Config__c
+                WHERE Object_API_Name__c = :objectApiName OR Object_API_Name__c = :stripped
             ];
             if (!records.isEmpty()) {
                 delete records;
