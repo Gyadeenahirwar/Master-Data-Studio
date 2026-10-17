@@ -444,3 +444,11 @@
 .field-filter-pill-active {
     font-weight: 700;
 }
+.clear-slot-btn {
+    opacity: 0.65;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.clear-slot-btn:hover {
+    opacity: 1;
+    transform: scale(1.15);
+}

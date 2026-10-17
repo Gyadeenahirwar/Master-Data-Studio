@@ -865,4 +865,47 @@ public without sharing class MasterUploadController {
         }
         return '';
     }
+
+    /**
+     * @description Clears all completed, completed with errors, or failed jobs to reset monitor slots.
+     */
+    @AuraEnabled
+    public static Boolean clearCompletedJobs() {
+        try {
+            List<Master_Upload_Job__c> completedJobs = [
+                SELECT Id FROM Master_Upload_Job__c
+                WHERE Status__c IN ('Completed', 'Completed with Errors', 'Failed')
+            ];
+            if (!completedJobs.isEmpty()) {
+                delete completedJobs;
+            }
+            return true;
+        } catch (Exception ex) {
+            AuraHandledException aEx = new AuraHandledException('Failed to clear completed jobs: ' + ex.getMessage());
+            aEx.setMessage('Failed to clear completed jobs: ' + ex.getMessage());
+            throw aEx;
+        }
+    }
+
+    /**
+     * @description Clears an individual job by its Id to free up a specific monitor slot.
+     */
+    @AuraEnabled
+    public static Boolean clearJobById(Id jobId) {
+        if (jobId == null) return false;
+        try {
+            List<Master_Upload_Job__c> jobs = [
+                SELECT Id FROM Master_Upload_Job__c WHERE Id = :jobId LIMIT 1
+            ];
+            if (!jobs.isEmpty()) {
+                delete jobs;
+                return true;
+            }
+            return false;
+        } catch (Exception ex) {
+            AuraHandledException aEx = new AuraHandledException('Failed to clear job: ' + ex.getMessage());
+            aEx.setMessage('Failed to clear job: ' + ex.getMessage());
+            throw aEx;
+        }
+    }
 }

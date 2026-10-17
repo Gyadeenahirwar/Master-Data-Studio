@@ -48,7 +48,17 @@
                             Real-time persistent tracking. Refresh-safe — jobs continue and persist directly in Salesforce. Max 3 concurrent uploads.
                         </p>
                     </div>
-                    <div class="slds-col slds-size_1-of-1 slds-medium-size_4-of-12 slds-text-align_right slds-p-top_x-small slds-medium-p-top_none">
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_6-of-12 slds-text-align_right slds-p-top_x-small slds-medium-p-top_none">
+                        <template if:true={hasCompletedJobs}>
+                            <lightning-button
+                                label="Clear Completed Slots"
+                                icon-name="utility:clear"
+                                variant="neutral"
+                                size="small"
+                                onclick={handleClearCompletedJobs}
+                                class="slds-m-right_x-small">
+                            </lightning-button>
+                        </template>
                         <lightning-button
                             label="Refresh Monitor"
                             icon-name="utility:refresh"
@@ -72,10 +82,22 @@
                                                 {slot.jobId}
                                             </span>
                                         </div>
-                                        <div>
+                                        <div class="slds-grid slds-grid_vertical-align-center">
                                             <span class={slot.statusBadgeClass}>
                                                 {slot.status}
                                             </span>
+                                            <template if:false={slot.isProcessing}>
+                                                <lightning-button-icon
+                                                    icon-name="utility:close"
+                                                    variant="bare"
+                                                    size="small"
+                                                    class="slds-m-left_xx-small clear-slot-btn"
+                                                    alternative-text="Clear this slot"
+                                                    title="Clear this slot"
+                                                    data-job-id={slot.recordId}
+                                                    onclick={handleClearSingleJob}>
+                                                </lightning-button-icon>
+                                            </template>
                                         </div>
                                     </div>
 

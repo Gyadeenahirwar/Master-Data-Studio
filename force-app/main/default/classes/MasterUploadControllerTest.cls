@@ -338,6 +338,15 @@ private class MasterUploadControllerTest {
         System.assertEquals('Failed', failedJob.Status__c);
         System.assert(failedJob.Error_Log__c.contains('DML Crash'));
 
+        // 7. Test clearJobById
+        Boolean singleCleared = MasterUploadController.clearJobById(failJobId);
+        System.assertEquals(true, singleCleared, 'Should clear single job by ID');
+        System.assertEquals(false, MasterUploadController.clearJobById(null), 'Should handle null safely');
+
+        // 8. Test clearCompletedJobs
+        Boolean allCompletedCleared = MasterUploadController.clearCompletedJobs();
+        System.assertEquals(true, allCompletedCleared, 'Should clear all completed jobs');
+
         Test.stopTest();
     }
 

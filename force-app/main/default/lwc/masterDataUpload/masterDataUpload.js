@@ -13,6 +13,8 @@ import updateJobProgress from '@salesforce/apex/MasterUploadController.updateJob
 import markJobFailed from '@salesforce/apex/MasterUploadController.markJobFailed';
 import getActiveAndRecentJobs from '@salesforce/apex/MasterUploadController.getActiveAndRecentJobs';
 import getJobErrorLog from '@salesforce/apex/MasterUploadController.getJobErrorLog';
+import clearCompletedJobs from '@salesforce/apex/MasterUploadController.clearCompletedJobs';
+import clearJobById from '@salesforce/apex/MasterUploadController.clearJobById';
 
 const BATCH_CHUNK_SIZE = 200;
 const PREVIEW_LIMIT = 10;
@@ -102,6 +104,33 @@ export default class MasterDataUpload extends LightningElement {
             this.recentJobs = jobs || [];
         } catch (ex) {
             // Polling background failover
+        }
+    }
+
+    async handleClearCompletedJobs() {
+        this.isLoading = true;
+        try {
+            await clearCompletedJobs();
+            this.recentJobs = (this.recentJobs || []).filter(j => j.isProcessing);
+            this.showToast('Cleared', 'Completed job slots cleared successfully.', 'success');
+            await this.fetchRecentJobs();
+        } catch (ex) {
+            this.showToast('Error', 'Failed to clear completed jobs: ' + (ex.body ? ex.body.message : ex.message), 'error');
+        } finally {
+            this.isLoading = false;
+        }
+    }
+
+    async handleClearSingleJob(event) {
+        const jobId = event.target.dataset.jobId;
+        if (!jobId) return;
+        try {
+            await clearJobById({ jobId });
+            this.recentJobs = (this.recentJobs || []).filter(j => j.recordId !== jobId);
+            this.showToast('Cleared', 'Job slot cleared.', 'info');
+            await this.fetchRecentJobs();
+        } catch (ex) {
+            this.showToast('Error', 'Failed to clear slot: ' + (ex.body ? ex.body.message : ex.message), 'error');
         }
     }
 
@@ -960,6 +989,10 @@ export default class MasterDataUpload extends LightningElement {
 
     get hasRecentJobs() {
         return this.recentJobs && this.recentJobs.length > 0;
+    }
+
+    get hasCompletedJobs() {
+        return this.recentJobs && this.recentJobs.some(j => !j.isProcessing);
     }
 
     get topThreeJobs() {
