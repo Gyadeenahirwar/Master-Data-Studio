@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <!-- Master Data Studio Package Components -->
+    <types>
+        <members>MasterDataUploadHandler</members>
+        <members>MasterDataUploadHandlerTest</members>
+        <members>MasterUploadController</members>
+        <members>MasterUploadControllerTest</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>Master_Data_Studio_Config__c</members>
+        <members>Master_Upload_Job__c</members>
+        <name>CustomObject</name>
+    </types>
+    <types>
+        <members>Master_Data_Studio</members>
+        <name>CustomTab</name>
+    </types>
+    <types>
+        <members>masterDataUpload</members>
+        <name>LightningComponentBundle</name>
+    </types>
+    <types>
+        <members>Master_Data_Studio_Admin</members>
+        <name>PermissionSet</name>
+    </types>
+    <version>62.0</version>
+</Package>

@@ -1,0 +1,790 @@
+<template>
+    <lightning-card title="Master Data Studio" icon-name="standard:data_integration_hub">
+        <!-- Action Buttons in Card Header -->
+        <div slot="actions" class="header-actions-wrap">
+            <lightning-button
+                label="Setup Uploader"
+                icon-name="utility:setup"
+                variant="brand"
+                onclick={handleOpenSetupModal}
+                class="slds-m-right_xx-small action-btn">
+            </lightning-button>
+            <lightning-button
+                label="Refresh"
+                icon-name="utility:refresh"
+                onclick={handleRefreshAll}
+                class="slds-m-right_xx-small action-btn">
+            </lightning-button>
+            <lightning-button
+                label="Download Template"
+                icon-name="utility:download"
+                variant="brand-outline"
+                onclick={handleDownloadTemplate}
+                disabled={isTemplateDownloadDisabled}
+                class="action-btn">
+            </lightning-button>
+        </div>
+
+        <!-- Global Spinner -->
+        <template if:true={isLoading}>
+            <lightning-spinner alternative-text="Loading" size="medium" variant="brand"></lightning-spinner>
+        </template>
+
+        <div class="slds-p-around_medium main-container">
+            <!-- ========================================================================= -->
+            <!-- LIVE INGESTION MONITOR & PARALLEL JOB QUEUE (MAX 3 SLOTS)                  -->
+            <!-- ========================================================================= -->
+            <div class="slds-box slds-m-bottom_medium monitor-panel">
+                <div class="slds-grid slds-wrap slds-grid_vertical-align-center slds-m-bottom_small">
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_8-of-12">
+                        <h2 class="slds-text-heading_small monitor-title">
+                            <lightning-icon icon-name="utility:sync" size="small" class="slds-m-right_x-small sync-icon-pulse"></lightning-icon>
+                            Ingestion Job Monitor & Parallel Queue
+                            <span class={parallelSlotsBadgeClass} style="margin-left: 0.5rem;">
+                                {parallelSlotsBadge}
+                            </span>
+                        </h2>
+                        <p class="slds-text-body_small slds-text-color_weak slds-m-top_xx-small">
+                            Real-time persistent tracking. Refresh-safe — jobs continue and persist directly in Salesforce. Max 3 concurrent uploads.
+                        </p>
+                    </div>
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_4-of-12 slds-text-align_right slds-p-top_x-small slds-medium-p-top_none">
+                        <lightning-button
+                            label="Refresh Monitor"
+                            icon-name="utility:refresh"
+                            size="small"
+                            onclick={fetchRecentJobs}>
+                        </lightning-button>
+                    </div>
+                </div>
+
+                <!-- 3 PARALLEL JOB MONITOR SLOTS -->
+                <div class="slds-grid slds-wrap slds-gutters">
+                    <template for:each={jobSlots} for:item="slot">
+                        <div key={slot.recordId} class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-m-bottom_small">
+                            <!-- OCCUPIED ACTIVE / RECENT JOB -->
+                            <template if:true={slot.isOccupied}>
+                                <div class="job-monitor-card">
+                                    <!-- Card Header -->
+                                    <div class="slds-grid slds-grid_vertical-align-center slds-grid_align-spread slds-m-bottom_x-small">
+                                        <div>
+                                            <span class="slds-badge slds-badge_lightest job-id-badge" title="Salesforce Job ID">
+                                                {slot.jobId}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            <span class={slot.statusBadgeClass}>
+                                                {slot.status}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Job Target & File -->
+                                    <h4 class="job-target-name slds-truncate" title={slot.objectLabel}>
+                                        {slot.objectLabel}
+                                    </h4>
+                                    <p class="job-file-name slds-truncate slds-m-bottom_x-small" title={slot.fileName}>
+                                        <lightning-icon icon-name="doctype:csv" size="xx-small" class="slds-m-right_xx-small"></lightning-icon>
+                                        {slot.fileName}
+                                    </p>
+
+                                    <!-- Progress Bar -->
+                                    <div class="slds-m-vertical_x-small">
+                                        <div class="slds-grid slds-grid_align-spread slds-text-body_small slds-m-bottom_xx-small">
+                                            <span>Progress</span>
+                                            <strong>{slot.progressPercent}%</strong>
+                                        </div>
+                                        <lightning-progress-bar value={slot.progressPercent} size="small" variant="circular"></lightning-progress-bar>
+                                    </div>
+
+                                    <!-- Stats Counters -->
+                                    <div class="slds-grid slds-grid_align-spread job-stats-bar slds-m-top_x-small">
+                                        <div class="job-stat-item">
+                                            <span class="job-stat-label">Total</span>
+                                            <span class="job-stat-val">{slot.totalRows}</span>
+                                        </div>
+                                        <div class="job-stat-item stat-success">
+                                            <span class="job-stat-label">Success</span>
+                                            <span class="job-stat-val">{slot.successRows}</span>
+                                        </div>
+                                        <div class="job-stat-item stat-fail">
+                                            <span class="job-stat-label">Failed</span>
+                                            <span class="job-stat-val">{slot.failedRows}</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Action: Download Error CSV if failures exist -->
+                                    <template if:true={slot.hasErrors}>
+                                        <div class="slds-m-top_x-small slds-text-align_center">
+                                            <lightning-button
+                                                label="Download Failed CSV"
+                                                icon-name="utility:download"
+                                                variant="destructive-text"
+                                                size="small"
+                                                data-job-id={slot.recordId}
+                                                onclick={handleDownloadJobErrorCsv}
+                                                class="download-error-job-btn">
+                                            </lightning-button>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+
+                            <!-- IDLE / READY SLOT -->
+                            <template if:false={slot.isOccupied}>
+                                <div class="job-monitor-card slot-empty">
+                                    <div class="slds-text-align_center slds-p-vertical_small">
+                                        <span class="slds-badge slds-badge_lightest slds-m-bottom_xx-small">{slot.slotLabel}</span>
+                                        <p class="slds-text-body_small slds-text-color_weak">Slot {slot.slotIndex} Available</p>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- IF HAS CONFIGURED OBJECTS -->
+            <template if:true={hasUploadConfigs}>
+                <!-- STEP 1: OBJECT SELECTOR & PIPELINE SEQUENCE -->
+                <div class="slds-box slds-theme_shade slds-m-bottom_medium sequence-panel">
+                    <div class="slds-grid slds-wrap slds-grid_vertical-align-center">
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_5-of-12 slds-p-right_medium">
+                            <lightning-combobox
+                                name="objectSelector"
+                                label="Select Master Data Object"
+                                value={selectedObjectApi}
+                                placeholder="Choose object to ingest..."
+                                options={objectOptions}
+                                onchange={handleObjectChange}>
+                            </lightning-combobox>
+                        </div>
+
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_7-of-12 slds-p-top_small slds-medium-p-top_none">
+                            <template if:true={selectedConfig}>
+                                <div class="slds-grid slds-wrap slds-gutters_x-small">
+                                    <div class="slds-col slds-m-bottom_x-small">
+                                        <span class="slds-badge slds-theme_info sequence-badge">
+                                            <lightning-icon icon-name="utility:steps" size="xx-small" class="slds-m-right_xx-small" variant="inverse"></lightning-icon>
+                                            {selectedConfig.stepBadge}
+                                        </span>
+                                    </div>
+                                    <div class="slds-col slds-m-bottom_x-small">
+                                        <span class="slds-badge slds-badge_lightest">
+                                            API: <strong>{selectedConfig.objectApiName}</strong>
+                                        </span>
+                                    </div>
+                                    <div class="slds-col slds-m-bottom_x-small">
+                                        <span class="slds-badge slds-theme_success">
+                                            Upsert Key: <strong>{activeExternalIdField}</strong>
+                                        </span>
+                                    </div>
+                                    <div class="slds-col slds-m-bottom_x-small">
+                                        <lightning-button-icon
+                                            icon-name="utility:edit"
+                                            variant="border-filled"
+                                            size="small"
+                                            alternative-text="Edit this Uploader"
+                                            title="Edit this Uploader"
+                                            onclick={handleEditCurrentUploader}>
+                                        </lightning-button-icon>
+                                        <lightning-button-icon
+                                            icon-name="utility:delete"
+                                            variant="border-filled"
+                                            size="small"
+                                            class="slds-m-left_xx-small"
+                                            alternative-text="Delete this Uploader"
+                                            title="Delete this Uploader"
+                                            onclick={handleDeleteCurrentUploader}>
+                                        </lightning-button-icon>
+                                    </div>
+                                </div>
+                                <template if:true={selectedConfig.description}>
+                                    <p class="slds-text-body_small slds-text-color_weak slds-m-top_xx-small">
+                                        {selectedConfig.description}
+                                    </p>
+                                </template>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+            <!-- TABS: 1. UPLOAD & PREVIEW STUDIO, 2. SCHEMA & FIELD GUIDE -->
+            <lightning-tabset variant="scoped" active-tab-value={activeTab}>
+                <!-- TAB 1: UPLOAD & PREVIEW STUDIO -->
+                <lightning-tab label="Upload & Ingestion Studio" value="uploadTab" icon-name="utility:upload">
+                    <!-- QUICK DOWNLOAD TEMPLATE HERO BANNER -->
+                    <div class="slds-box slds-box_x-small template-hero-card slds-m-vertical_small">
+                        <div class="slds-grid slds-wrap slds-grid_vertical-align-center">
+                            <div class="slds-col slds-size_1-of-1 slds-medium-size_8-of-12">
+                                <div class="slds-media slds-media_center">
+                                    <div class="slds-media__figure">
+                                        <span class="template-hero-icon">
+                                            <lightning-icon icon-name="doctype:csv" size="small"></lightning-icon>
+                                        </span>
+                                    </div>
+                                    <div class="slds-media__body">
+                                        <h3 class="slds-text-heading_small slds-font-weight_bold">
+                                            {currentObjectLabel} CSV Template ({templateColumnCount} columns)
+                                        </h3>
+                                        <p class="slds-text-body_small slds-text-color_weak">
+                                            Pre-formatted CSV with expected headers & upsert key: <strong>{activeExternalIdField}</strong>. Download, fill records, and upload below.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="slds-col slds-size_1-of-1 slds-medium-size_4-of-12 slds-text-align_right slds-p-top_x-small slds-medium-p-top_none template-hero-action">
+                                <lightning-button
+                                    label="Download Template"
+                                    icon-name="utility:download"
+                                    variant="brand"
+                                    onclick={handleDownloadTemplate}
+                                    disabled={isTemplateDownloadDisabled}
+                                    class="download-hero-btn">
+                                </lightning-button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SECTION: DRAG & DROP CSV UPLOAD -->
+                    <div class="slds-m-vertical_small">
+                        <div class={dropzoneClass}
+                             ondragover={handleDragOver}
+                             ondragleave={handleDragLeave}
+                             ondrop={handleDrop}>
+                            <lightning-icon icon-name="doctype:csv" size="large" class="slds-m-bottom_x-small"></lightning-icon>
+                            <h3 class="slds-text-heading_small slds-m-bottom_xx-small">
+                                Drag & Drop CSV File here, or
+                            </h3>
+                            <label class="slds-button slds-button_neutral custom-file-button">
+                                <span>Browse CSV</span>
+                                <input type="file" accept=".csv" class="file-input-hidden" onchange={handleFileSelect} />
+                            </label>
+                            <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+                                Accepts standard comma-delimited (.csv) files. Lookups are automatically resolved via Parent External Codes.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- FILE SELECTED BANNER & VALIDATION ALERTS -->
+                    <template if:true={fileName}>
+                        <div class="slds-notify slds-notify_alert slds-alert_neutral slds-m-vertical_small" role="alert">
+                            <span class="slds-icon_container slds-m-right_x-small">
+                                <lightning-icon icon-name="utility:file" size="x-small"></lightning-icon>
+                            </span>
+                            <h2>
+                                Selected File: <strong>{fileName}</strong> ({fileSizeFormatted}) &nbsp;|&nbsp;
+                                Detected Rows: <strong>{totalCsvRows}</strong> &nbsp;|&nbsp;
+                                Detected Columns: <strong>{parsedHeaders.length}</strong>
+                            </h2>
+                            <div class="slds-notify__close">
+                                <lightning-button-icon icon-name="utility:close" variant="bare" onclick={handleClearFile} alternative-text="Remove file"></lightning-button-icon>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- HEADER VALIDATION WARNINGS -->
+                    <template if:true={missingRequiredHeaders.length}>
+                        <div class="slds-notify slds-notify_alert slds-alert_error slds-m-bottom_small" role="alert">
+                            <span class="slds-icon_container slds-m-right_x-small">
+                                <lightning-icon icon-name="utility:error" size="x-small" variant="inverse"></lightning-icon>
+                            </span>
+                            <h2>
+                                <strong>Missing Required Columns:</strong> The CSV file is missing mandatory headers:
+                                <em> {missingRequiredHeadersString}</em>. Please include them before uploading.
+                            </h2>
+                        </div>
+                    </template>
+
+                    <!-- INTERACTIVE CSV PREVIEW -->
+                    <template if:true={hasPreviewData}>
+                        <div class="slds-box slds-m-vertical_small preview-card">
+                            <div class="slds-grid slds-grid_vertical-align-center slds-m-bottom_small">
+                                <div class="slds-col">
+                                    <h2 class="slds-text-heading_small">
+                                        <lightning-icon icon-name="utility:preview" size="x-small" class="slds-m-right_xx-small"></lightning-icon>
+                                        CSV Data Preview (First {previewRowCount} of {totalCsvRows} rows)
+                                    </h2>
+                                </div>
+                                <div class="slds-col slds-grow-none">
+                                    <lightning-button
+                                        label="Clear"
+                                        variant="base"
+                                        onclick={handleClearFile}>
+                                    </lightning-button>
+                                </div>
+                            </div>
+
+                            <div class="table-container slds-scrollable">
+                                <table class="slds-table slds-table_cell-buffer slds-table_bordered slds-table_col-bordered slds-no-row-hover">
+                                    <thead>
+                                        <tr class="slds-line-height_reset">
+                                            <th scope="col" class="row-num-col">#</th>
+                                            <template for:each={parsedHeaders} for:item="h">
+                                                <th key={h} scope="col">
+                                                    <div class="slds-truncate" title={h}>
+                                                        {h}
+                                                    </div>
+                                                </th>
+                                            </template>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template for:each={previewRows} for:item="row">
+                                            <tr key={row._rowId}>
+                                                <td class="row-num-cell">{row._rowNumber}</td>
+                                                <template for:each={row.cells} for:item="cell">
+                                                    <td key={cell.header}>
+                                                        <div class="slds-truncate" title={cell.value}>
+                                                            {cell.value}
+                                                        </div>
+                                                    </td>
+                                                </template>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- UPLOAD ACTION CONTROLS -->
+                        <div class="slds-grid slds-grid_align-center slds-m-vertical_medium">
+                            <lightning-button
+                                variant="brand"
+                                label={uploadButtonLabel}
+                                icon-name="utility:upload"
+                                onclick={handleExecuteUpload}
+                                disabled={isUploadDisabled}
+                                class="upload-cta-button">
+                            </lightning-button>
+                        </div>
+                    </template>
+
+                    <!-- PROGRESS BAR (DURING BATCH INGESTION) -->
+                    <template if:true={isUploading}>
+                        <div class="slds-box slds-m-vertical_medium progress-box">
+                            <div class="slds-grid slds-grid_vertical-align-center slds-m-bottom_x-small">
+                                <div class="slds-col">
+                                    <h3 class="slds-text-title_bold">{progressStatusText}</h3>
+                                </div>
+                                <div class="slds-col slds-grow-none">
+                                    <span class="slds-badge slds-theme_warning">{progressPercentage}%</span>
+                                </div>
+                            </div>
+                            <lightning-progress-bar value={progressPercentage} size="large" variant="circular"></lightning-progress-bar>
+                        </div>
+                    </template>
+
+                    <!-- RESULTS SUMMARY SECTION -->
+                    <template if:true={hasCompletedResults}>
+                        <div class="slds-m-vertical_medium">
+                            <!-- METRICS CARDS -->
+                            <div class="slds-grid slds-wrap slds-gutters slds-m-bottom_medium">
+                                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-m-bottom_x-small">
+                                    <div class="metric-card metric-total">
+                                        <div class="metric-number">{resultsSummary.totalProcessed}</div>
+                                        <div class="metric-label">Total Processed</div>
+                                    </div>
+                                </div>
+                                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-m-bottom_x-small">
+                                    <div class="metric-card metric-success">
+                                        <div class="metric-number">{resultsSummary.totalSuccess}</div>
+                                        <div class="metric-label">Successfully Upserted</div>
+                                    </div>
+                                </div>
+                                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-m-bottom_x-small">
+                                    <div class="metric-card metric-failure">
+                                        <div class="metric-number">{resultsSummary.totalFailure}</div>
+                                        <div class="metric-label">Failed / Errored</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ERROR LOG TABLE -->
+                            <template if:true={hasErrors}>
+                                <div class="slds-box slds-theme_default error-box">
+                                    <div class="slds-grid slds-grid_vertical-align-center slds-m-bottom_small">
+                                        <div class="slds-col">
+                                            <h2 class="slds-text-heading_small slds-text-color_error">
+                                                <lightning-icon icon-name="utility:warning" size="x-small" variant="error" class="slds-m-right_xx-small"></lightning-icon>
+                                                Ingestion Error Logs ({resultsSummary.totalFailure} failed rows)
+                                            </h2>
+                                        </div>
+                                        <div class="slds-col slds-grow-none">
+                                            <lightning-button
+                                                label="Download Error Log CSV"
+                                                icon-name="utility:download"
+                                                variant="destructive-text"
+                                                onclick={handleDownloadErrorLog}>
+                                            </lightning-button>
+                                        </div>
+                                    </div>
+
+                                    <div class="table-container slds-scrollable">
+                                        <table class="slds-table slds-table_cell-buffer slds-table_bordered slds-table_striped">
+                                            <thead>
+                                                <tr class="slds-line-height_reset">
+                                                    <th scope="col" style="width: 80px;">CSV Row</th>
+                                                    <th scope="col" style="width: 180px;">External Code</th>
+                                                    <th scope="col">Error Reason</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <template for:each={aggregatedErrors} for:item="err">
+                                                    <tr key={err.key}>
+                                                        <td><strong>{err.rowIndex}</strong></td>
+                                                        <td><code>{err.externalCode}</code></td>
+                                                        <td class="slds-text-color_error">{err.errorMessage}</td>
+                                                    </tr>
+                                                </template>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                </lightning-tab>
+
+                <!-- TAB 2: SCHEMA & DYNAMIC FIELD GUIDE -->
+                <lightning-tab label="Data Schema & Field Guide" value="schemaTab" icon-name="utility:table">
+                    <div class="slds-m-vertical_small">
+                        <div class="slds-grid slds-grid_vertical-align-center slds-m-bottom_small">
+                            <div class="slds-col slds-size_1-of-1 slds-medium-size_6-of-12">
+                                <lightning-input
+                                    type="search"
+                                    placeholder="Search columns or fields..."
+                                    value={schemaSearchKey}
+                                    onchange={handleSchemaSearch}
+                                    variant="label-hidden">
+                                </lightning-input>
+                            </div>
+                            <div class="slds-col slds-grow-none slds-m-left_auto">
+                                <lightning-button
+                                    label="Download CSV Template"
+                                    icon-name="utility:download"
+                                    variant="brand"
+                                    onclick={handleDownloadTemplate}
+                                    disabled={isTemplateDownloadDisabled}>
+                                </lightning-button>
+                            </div>
+                        </div>
+
+                        <div class="table-container slds-scrollable slds-box slds-p-around_none">
+                            <table class="slds-table slds-table_cell-buffer slds-table_bordered slds-table_striped">
+                                <thead>
+                                    <tr class="slds-line-height_reset">
+                                        <th scope="col">Expected CSV Column</th>
+                                        <th scope="col">Field Label</th>
+                                        <th scope="col">Field API Name</th>
+                                        <th scope="col">Data Type</th>
+                                        <th scope="col">Requirement</th>
+                                        <th scope="col">Ingestion & Lookup Resolution Rules</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template for:each={filteredFieldMappings} for:item="f">
+                                        <tr key={f.headerName}>
+                                            <td>
+                                                <strong>{f.headerName}</strong>
+                                            </td>
+                                            <td>{f.fieldLabel}</td>
+                                            <td><code>{f.fieldApiName}</code></td>
+                                            <td>
+                                                <span class="slds-badge slds-badge_lightest">{f.dataType}</span>
+                                            </td>
+                                            <td>
+                                                <template if:true={f.isRequired}>
+                                                    <span class="slds-badge slds-theme_error">Required</span>
+                                                </template>
+                                                <template if:false={f.isRequired}>
+                                                    <span class="slds-badge">Optional</span>
+                                                </template>
+                                            </td>
+                                            <td>
+                                                <template if:true={f.isLookup}>
+                                                    <span class="slds-badge slds-theme_info lookup-badge">
+                                                        <lightning-icon icon-name="utility:hierarchy" size="xx-small" class="slds-m-right_xx-small" variant="inverse"></lightning-icon>
+                                                        {f.mappingNote}
+                                                    </span>
+                                                </template>
+                                                <template if:false={f.isLookup}>
+                                                    <span class="slds-text-body_small slds-text-color_weak">{f.mappingNote}</span>
+                                                </template>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </lightning-tab>
+            </lightning-tabset>
+        </template>
+
+        <!-- EMPTY STATE: WHEN NO UPLOADERS CONFIGURED -->
+        <template if:false={hasUploadConfigs}>
+            <div class="slds-card slds-p-around_xx-large slds-text-align_center empty-state-box">
+                <div class="empty-state-icon-wrap slds-m-bottom_medium">
+                    <lightning-icon icon-name="standard:data_integration_hub" size="large"></lightning-icon>
+                </div>
+                <h2 class="slds-text-heading_medium slds-m-bottom_small text-gradient font-weight-bold">
+                    No Uploaders Configured Yet
+                </h2>
+                <p class="slds-text-body_regular slds-text-color_weak slds-m-bottom_large empty-state-desc">
+                    Your <strong>Master Data Studio</strong> is completely dynamic, bulkified, and generic. No objects or static templates are pre-locked.
+                    Click <strong>"Setup Your First Uploader"</strong> below to select any Standard or Custom Object in this Salesforce org, pick the fields for your CSV template, and activate bulk uploading in seconds!
+                </p>
+                <lightning-button
+                    label="⚡ Setup Your First Uploader"
+                    icon-name="utility:setup"
+                    variant="brand"
+                    class="setup-hero-btn"
+                    onclick={handleOpenSetupModal}>
+                </lightning-button>
+            </div>
+        </template>
+    </div>
+
+        <!-- ========================================================================= -->
+        <!-- SETUP UPLOADER MODAL WIZARD -->
+        <!-- ========================================================================= -->
+        <template if:true={isSetupModalOpen}>
+            <section role="dialog" tabindex="-1" class="slds-modal slds-fade-in-open slds-modal_large" aria-modal="true">
+                <div class="slds-modal__container">
+                    <!-- Modal Header -->
+                    <header class="slds-modal__header modal-header-custom">
+                        <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse" title="Close" onclick={handleCloseSetupModal}>
+                            <lightning-icon icon-name="utility:close" alternative-text="Close" variant="inverse" size="small"></lightning-icon>
+                            <span class="slds-assistive-text">Close</span>
+                        </button>
+                        <h2 class="slds-text-heading_medium slds-hyphenate">
+                            <lightning-icon icon-name="utility:setup" size="small" class="slds-m-right_x-small" variant="inverse"></lightning-icon>
+                            Master Data Studio — Setup Uploader Wizard
+                        </h2>
+                        <p class="slds-m-top_x-small slds-text-color_inverse-weak">
+                            Configure an uploader for any Salesforce object. Choose which fields appear in the generated CSV template.
+                        </p>
+                    </header>
+
+                    <!-- Modal Body -->
+                    <div class="slds-modal__content slds-p-around_medium" style="max-height: 70vh; overflow-y: auto;">
+                        <template if:true={isSetupLoading}>
+                            <lightning-spinner alternative-text="Loading fields" size="medium" variant="brand"></lightning-spinner>
+                        </template>
+
+                        <!-- STEP A: OBJECT CONFIGURATION FORM -->
+                        <div class="slds-box slds-theme_shade slds-m-bottom_medium setup-config-panel">
+                            <h3 class="slds-text-title_bold slds-m-bottom_x-small slds-text-color_default">
+                                1. Target Object & Dependency Pipeline
+                            </h3>
+                            <div class="slds-grid slds-wrap slds-gutters">
+                                <div class="slds-col slds-size_1-of-1 slds-medium-size_6-of-12 slds-m-bottom_small">
+                                    <lightning-combobox
+                                        name="setupObjectSelector"
+                                        label="Select Target SObject"
+                                        value={setupForm.objectApiName}
+                                        placeholder="Search standard or custom object..."
+                                        options={allEligibleObjectOptions}
+                                        onchange={handleSetupObjectChange}
+                                        required>
+                                    </lightning-combobox>
+                                </div>
+                                <div class="slds-col slds-size_1-of-1 slds-medium-size_6-of-12 slds-m-bottom_small">
+                                    <lightning-input
+                                        type="text"
+                                        label="Friendly Display Name"
+                                        value={setupForm.objectLabel}
+                                        onchange={handleSetupLabelChange}
+                                        placeholder="e.g. Territory Master, Product Category"
+                                        required>
+                                    </lightning-input>
+                                </div>
+                                <div class="slds-col slds-size_1-of-1 slds-medium-size_4-of-12 slds-m-bottom_small">
+                                    <lightning-input
+                                        type="number"
+                                        label="Upload Sequence (Order)"
+                                        value={setupForm.uploadSequence}
+                                        onchange={handleSetupSequenceChange}
+                                        min="1"
+                                        max="999"
+                                        field-level-help="Sequence determines upload dependency order (e.g. 1=Types, 2=Masters, 3=Transactions)">
+                                    </lightning-input>
+                                </div>
+                                <div class="slds-col slds-size_1-of-1 slds-medium-size_4-of-12 slds-m-bottom_small">
+                                    <lightning-input
+                                        type="text"
+                                        label="External ID Field (Upsert Key)"
+                                        value={setupForm.externalIdField}
+                                        onchange={handleSetupExtIdChange}
+                                        field-level-help="The unique key used for safe upserts. Defaults to External_Code__c or auto-detected External ID.">
+                                    </lightning-input>
+                                </div>
+                                <div class="slds-col slds-size_1-of-1 slds-medium-size_4-of-12 slds-m-bottom_small">
+                                    <lightning-input
+                                        type="text"
+                                        label="Description / Help Notes"
+                                        value={setupForm.description}
+                                        onchange={handleSetupDescChange}
+                                        placeholder="Brief purpose of this master data">
+                                    </lightning-input>
+                                </div>
+                            </div>
+
+                            <!-- DUPLICATE OBJECT WARNING BADGE -->
+                            <template if:true={isObjectAlreadyConfigured}>
+                                <div class="slds-notify slds-notify_alert slds-alert_warning slds-m-top_xx-small" role="alert">
+                                    <span class="slds-icon_container slds-m-right_x-small">
+                                        <lightning-icon icon-name="utility:info" size="x-small"></lightning-icon>
+                                    </span>
+                                    <h2>
+                                        <strong>Notice:</strong> <em>{setupForm.objectApiName}</em> is already configured (Sequence #{existingConfigSequence}). Modifying it will update its template fields and settings.
+                                    </h2>
+                                </div>
+                            </template>
+                        </div>
+
+                        <!-- STEP B: INTERACTIVE FIELD SELECTION MATRIX -->
+                        <template if:true={setupFields.length}>
+                            <div class="slds-box slds-m-bottom_medium field-matrix-panel">
+                                <div class="slds-grid slds-wrap slds-grid_vertical-align-center slds-m-bottom_small">
+                                    <div class="slds-col slds-size_1-of-1 slds-medium-size_6-of-12">
+                                        <h3 class="slds-text-title_bold slds-m-bottom_xx-small">
+                                            2. Choose Fields to Include in CSV Template
+                                        </h3>
+                                        <p class="slds-text-body_small slds-text-color_weak">
+                                            Selected: <strong class="slds-text-color_success">{selectedFieldCount}</strong> of {setupFields.length} fields. Mandatory fields are auto-locked.
+                                        </p>
+                                    </div>
+                                    <div class="slds-col slds-size_1-of-1 slds-medium-size_6-of-12 slds-text-align_right slds-p-top_small slds-medium-p-top_none">
+                                        <lightning-button-group>
+                                            <lightning-button label="Select All" onclick={handleSelectAllFields} size="small"></lightning-button>
+                                            <lightning-button label="Required Only" onclick={handleSelectRequiredOnly} size="small"></lightning-button>
+                                            <lightning-button label="Deselect Optional" onclick={handleDeselectOptionalFields} size="small"></lightning-button>
+                                        </lightning-button-group>
+                                    </div>
+                                </div>
+
+                                <div class="slds-m-bottom_small">
+                                    <lightning-input
+                                        type="search"
+                                        placeholder="Filter fields by name or label..."
+                                        value={setupFieldSearchKey}
+                                        onchange={handleSetupFieldSearch}
+                                        variant="label-hidden">
+                                    </lightning-input>
+                                </div>
+
+                                <!-- FIELDS DATA TABLE WITH CHECKBOXES -->
+                                <div class="table-container slds-scrollable setup-fields-table">
+                                    <table class="slds-table slds-table_cell-buffer slds-table_bordered slds-table_striped">
+                                        <thead>
+                                            <tr class="slds-line-height_reset">
+                                                <th scope="col" style="width: 50px;" class="slds-text-align_center">Include</th>
+                                                <th scope="col">Field Label</th>
+                                                <th scope="col">API Name</th>
+                                                <th scope="col">Data Type</th>
+                                                <th scope="col">Requirement</th>
+                                                <th scope="col">Lookup & Ingestion Rule</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <template for:each={filteredSetupFields} for:item="f">
+                                                <tr key={f.fieldApiName} class={f.rowClass}>
+                                                    <td class="slds-text-align_center">
+                                                        <lightning-input
+                                                            type="checkbox"
+                                                            checked={f.isSelected}
+                                                            disabled={f.isLocked}
+                                                            data-field={f.fieldApiName}
+                                                            onchange={handleFieldToggle}
+                                                            variant="label-hidden">
+                                                        </lightning-input>
+                                                    </td>
+                                                    <td><strong>{f.fieldLabel}</strong></td>
+                                                    <td><code>{f.fieldApiName}</code></td>
+                                                    <td>
+                                                        <span class="slds-badge slds-badge_lightest">{f.dataType}</span>
+                                                    </td>
+                                                    <td>
+                                                        <template if:true={f.isRequired}>
+                                                            <span class="slds-badge slds-theme_error">Mandatory</span>
+                                                        </template>
+                                                        <template if:false={f.isRequired}>
+                                                            <span class="slds-badge">Optional</span>
+                                                        </template>
+                                                    </td>
+                                                    <td>
+                                                        <template if:true={f.isLookup}>
+                                                            <span class="slds-badge slds-theme_info lookup-badge">
+                                                                <lightning-icon icon-name="utility:hierarchy" size="xx-small" class="slds-m-right_xx-small" variant="inverse"></lightning-icon>
+                                                                {f.mappingNote}
+                                                            </span>
+                                                        </template>
+                                                        <template if:false={f.isLookup}>
+                                                            <span class="slds-text-body_small slds-text-color_weak">{f.mappingNote}</span>
+                                                        </template>
+                                                    </td>
+                                                </tr>
+                                            </template>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- STEP C: LIVE CSV HEADER PREVIEW -->
+                            <div class="slds-box slds-theme_default live-preview-panel">
+                                <div class="slds-grid slds-grid_vertical-align-center slds-m-bottom_xx-small">
+                                    <div class="slds-col">
+                                        <h4 class="slds-text-title_bold">
+                                            <lightning-icon icon-name="utility:preview" size="xx-small" class="slds-m-right_xx-small"></lightning-icon>
+                                            Generated CSV Header Preview ({selectedFieldCount} columns)
+                                        </h4>
+                                    </div>
+                                    <div class="slds-col slds-grow-none">
+                                        <lightning-button
+                                            label="Download Test CSV"
+                                            icon-name="utility:download"
+                                            variant="base"
+                                            onclick={handleDownloadSetupPreviewCsv}>
+                                        </lightning-button>
+                                    </div>
+                                </div>
+                                <pre class="csv-preview-box"><code>{generatedCsvHeaderPreview}</code></pre>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Modal Footer -->
+                    <footer class="slds-modal__footer slds-grid slds-grid_align-spread">
+                        <div>
+                            <template if:true={isObjectAlreadyConfigured}>
+                                <lightning-button
+                                    label="Delete Configuration"
+                                    icon-name="utility:delete"
+                                    variant="destructive-text"
+                                    onclick={handleDeleteConfig}>
+                                </lightning-button>
+                            </template>
+                        </div>
+                        <div>
+                            <lightning-button
+                                label="Cancel"
+                                onclick={handleCloseSetupModal}
+                                class="slds-m-right_x-small">
+                            </lightning-button>
+                            <lightning-button
+                                label="Save & Activate Uploader"
+                                variant="brand"
+                                icon-name="utility:check"
+                                onclick={handleSaveSetupConfig}
+                                disabled={isSaveSetupDisabled}>
+                            </lightning-button>
+                        </div>
+                    </footer>
+                </div>
+            </section>
+            <div class="slds-backdrop slds-backdrop_open"></div>
+        </template>
+    </lightning-card>
+</template>
