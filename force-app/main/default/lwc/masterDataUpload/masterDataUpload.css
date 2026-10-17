@@ -423,3 +423,24 @@
         width: 100%;
     }
 }
+
+/* Search and Filter UI Enhancements */
+.search-filter-box {
+    border: 1px solid #d8dde6;
+    border-radius: 0.5rem;
+    background-color: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.search-filter-box:hover {
+    border-color: #0176d3;
+}
+
+.filter-badge-count {
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.field-filter-pill-active {
+    font-weight: 700;
+}

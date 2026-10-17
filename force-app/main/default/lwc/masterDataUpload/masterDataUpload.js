@@ -76,6 +76,10 @@ export default class MasterDataUpload extends LightningElement {
     };
     @track setupFields = [];
     setupFieldSearchKey = '';
+    mainObjectSearchKey = '';
+    setupObjectSearchKey = '';
+    setupObjectCategoryFilter = 'ALL'; // 'ALL', 'CONFIGURED', 'CUSTOM', 'STANDARD'
+    setupFieldCategoryFilter = 'ALL'; // 'ALL', 'SELECTED', 'REQUIRED', 'LOOKUP'
 
     connectedCallback() {
         this.fetchRecentJobs();
@@ -304,8 +308,52 @@ export default class MasterDataUpload extends LightningElement {
         this.setupForm.description = event.target.value;
     }
 
+    handleMainObjectSearch(event) {
+        this.mainObjectSearchKey = event.target.value ? event.target.value.toLowerCase() : '';
+    }
+
+    handleSetupObjectSearch(event) {
+        this.setupObjectSearchKey = event.target.value ? event.target.value : '';
+    }
+
+    handleFilterAllObjects() {
+        this.setupObjectCategoryFilter = 'ALL';
+    }
+
+    handleFilterConfiguredObjects() {
+        this.setupObjectCategoryFilter = 'CONFIGURED';
+    }
+
+    handleFilterCustomObjects() {
+        this.setupObjectCategoryFilter = 'CUSTOM';
+    }
+
+    handleFilterStandardObjects() {
+        this.setupObjectCategoryFilter = 'STANDARD';
+    }
+
+    handleSetupExtIdComboboxChange(event) {
+        this.setupForm.externalIdField = event.detail.value;
+    }
+
+    handleFieldFilterAll() {
+        this.setupFieldCategoryFilter = 'ALL';
+    }
+
+    handleFieldFilterSelected() {
+        this.setupFieldCategoryFilter = 'SELECTED';
+    }
+
+    handleFieldFilterRequired() {
+        this.setupFieldCategoryFilter = 'REQUIRED';
+    }
+
+    handleFieldFilterLookup() {
+        this.setupFieldCategoryFilter = 'LOOKUP';
+    }
+
     handleSetupFieldSearch(event) {
-        this.setupFieldSearchKey = event.target.value.toLowerCase();
+        this.setupFieldSearchKey = event.target.value ? event.target.value.toLowerCase() : '';
     }
 
     handleFieldToggle(event) {
@@ -320,6 +368,16 @@ export default class MasterDataUpload extends LightningElement {
 
     handleSelectAllFields() {
         this.setupFields = this.setupFields.map(f => ({ ...f, isSelected: true }));
+    }
+
+    handleSelectAllFilteredFields() {
+        const filteredApiNames = new Set(this.filteredSetupFields.map(f => f.fieldApiName));
+        this.setupFields = this.setupFields.map(f => {
+            if (filteredApiNames.has(f.fieldApiName) && !f.isLocked) {
+                return { ...f, isSelected: true };
+            }
+            return f;
+        });
     }
 
     handleSelectRequiredOnly() {
@@ -961,16 +1019,142 @@ export default class MasterDataUpload extends LightningElement {
         );
     }
 
+    get hasMultipleConfigs() {
+        return this.objectOptions && this.objectOptions.length > 1;
+    }
+
+    get filteredObjectOptions() {
+        if (!this.objectOptions) return [];
+        if (!this.mainObjectSearchKey) return this.objectOptions;
+        const key = this.mainObjectSearchKey.toLowerCase();
+        return this.objectOptions.filter(o => o.label.toLowerCase().includes(key) || o.value.toLowerCase().includes(key));
+    }
+
+    get totalEligibleObjectCount() {
+        return this.allEligibleObjects ? this.allEligibleObjects.length : 0;
+    }
+
+    get filteredAllEligibleObjectOptions() {
+        if (!this.allEligibleObjects || this.allEligibleObjects.length === 0) return [];
+        let list = this.allEligibleObjects;
+
+        // Category filter
+        if (this.setupObjectCategoryFilter === 'CONFIGURED') {
+            list = list.filter(o => o.isConfigured);
+        } else if (this.setupObjectCategoryFilter === 'CUSTOM') {
+            list = list.filter(o => o.isCustom);
+        } else if (this.setupObjectCategoryFilter === 'STANDARD') {
+            list = list.filter(o => !o.isCustom);
+        }
+
+        // Text search filter
+        if (this.setupObjectSearchKey && this.setupObjectSearchKey.trim()) {
+            const term = this.setupObjectSearchKey.trim().toLowerCase();
+            list = list.filter(o =>
+                (o.label && o.label.toLowerCase().includes(term)) ||
+                (o.value && o.value.toLowerCase().includes(term))
+            );
+        }
+
+        return list.map(o => ({
+            label: `${o.label}${o.isConfigured ? ' [Configured #' + o.currentSequence + ']' : ''}`,
+            value: o.value
+        }));
+    }
+
+    get allFilterBtnLabel() {
+        return `All (${this.totalEligibleObjectCount})`;
+    }
+
+    get configuredFilterBtnLabel() {
+        const count = this.allEligibleObjects ? this.allEligibleObjects.filter(o => o.isConfigured).length : 0;
+        return `Configured (${count})`;
+    }
+
+    get customFilterBtnLabel() {
+        const count = this.allEligibleObjects ? this.allEligibleObjects.filter(o => o.isCustom).length : 0;
+        return `Custom (${count})`;
+    }
+
+    get standardFilterBtnLabel() {
+        const count = this.allEligibleObjects ? this.allEligibleObjects.filter(o => !o.isCustom).length : 0;
+        return `Standard (${count})`;
+    }
+
+    get objectFilterAllVariant() {
+        return this.setupObjectCategoryFilter === 'ALL' ? 'brand' : 'neutral';
+    }
+
+    get objectFilterConfiguredVariant() {
+        return this.setupObjectCategoryFilter === 'CONFIGURED' ? 'brand' : 'neutral';
+    }
+
+    get objectFilterCustomVariant() {
+        return this.setupObjectCategoryFilter === 'CUSTOM' ? 'brand' : 'neutral';
+    }
+
+    get objectFilterStandardVariant() {
+        return this.setupObjectCategoryFilter === 'STANDARD' ? 'brand' : 'neutral';
+    }
+
+    get externalIdFieldOptions() {
+        if (!this.setupFields || this.setupFields.length === 0) {
+            return [{ label: 'External_Code__c (Default)', value: 'External_Code__c' }];
+        }
+        const options = [];
+        this.setupFields.forEach(f => {
+            let tag = '';
+            if (f.isExternalId) tag = ' [External ID]';
+            else if (f.isNameField) tag = ' [Name Field]';
+            else if (f.isUnique) tag = ' [Unique]';
+
+            options.push({
+                label: `${f.fieldLabel} (${f.fieldApiName})${tag}`,
+                value: f.fieldApiName
+            });
+        });
+        return options;
+    }
+
+    get fieldFilterAllVariant() {
+        return this.setupFieldCategoryFilter === 'ALL' ? 'brand' : 'neutral';
+    }
+
+    get fieldFilterSelectedVariant() {
+        return this.setupFieldCategoryFilter === 'SELECTED' ? 'brand' : 'neutral';
+    }
+
+    get fieldFilterRequiredVariant() {
+        return this.setupFieldCategoryFilter === 'REQUIRED' ? 'brand' : 'neutral';
+    }
+
+    get fieldFilterLookupVariant() {
+        return this.setupFieldCategoryFilter === 'LOOKUP' ? 'brand' : 'neutral';
+    }
+
     get filteredSetupFields() {
         if (!this.setupFields) return [];
-        if (!this.setupFieldSearchKey) return this.setupFields;
+        let list = this.setupFields;
 
-        return this.setupFields.filter(f =>
-            (f.fieldLabel && f.fieldLabel.toLowerCase().includes(this.setupFieldSearchKey)) ||
-            (f.fieldApiName && f.fieldApiName.toLowerCase().includes(this.setupFieldSearchKey)) ||
-            (f.dataType && f.dataType.toLowerCase().includes(this.setupFieldSearchKey)) ||
-            (f.mappingNote && f.mappingNote.toLowerCase().includes(this.setupFieldSearchKey))
-        );
+        if (this.setupFieldCategoryFilter === 'SELECTED') {
+            list = list.filter(f => f.isSelected);
+        } else if (this.setupFieldCategoryFilter === 'REQUIRED') {
+            list = list.filter(f => f.isRequired || f.isNameField);
+        } else if (this.setupFieldCategoryFilter === 'LOOKUP') {
+            list = list.filter(f => f.isLookup);
+        }
+
+        if (this.setupFieldSearchKey && this.setupFieldSearchKey.trim()) {
+            const key = this.setupFieldSearchKey.trim().toLowerCase();
+            list = list.filter(f =>
+                (f.fieldLabel && f.fieldLabel.toLowerCase().includes(key)) ||
+                (f.fieldApiName && f.fieldApiName.toLowerCase().includes(key)) ||
+                (f.dataType && f.dataType.toLowerCase().includes(key)) ||
+                (f.mappingNote && f.mappingNote.toLowerCase().includes(key))
+            );
+        }
+
+        return list;
     }
 
     get selectedFieldCount() {
